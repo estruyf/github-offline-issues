@@ -1,7 +1,63 @@
-# Tauri + React + Typescript
+# GitHub Issues Offline
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+A desktop application built with Tauri that lets you take your GitHub issues
+offline. Perfect for when you're commuting on a plane, train, or anywhere
+without connectivity.
 
-## Recommended IDE Setup
+## Features
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- **GitHub Authentication** - Sign in with your GitHub Personal Access Token
+- **Repository Management** - Add and manage multiple repositories
+- **Offline Sync** - Download all issues and comments for offline access
+- **Search & Filter** - Find issues by title, body, or number; filter by
+  open/closed state
+- **Full Issue Details** - View complete issue content including labels,
+  assignees, milestones, and comments
+
+## Getting Started
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v18 or later)
+- [Rust](https://www.rust-lang.org/tools/install)
+- [GitHub Personal Access Token](https://github.com/settings/tokens) with `repo`
+  scope
+
+### Installation
+
+```bash
+# Install dependencies
+npm install
+
+# Run in development mode
+npm run tauri dev
+
+# Build for production
+npm run tauri build
+```
+
+### Usage
+
+1. Launch the app and enter your GitHub Personal Access Token
+2. Add repositories you want to access offline
+3. Click "Take Offline" to sync issues and comments
+4. Browse your issues anytime, even without internet!
+
+## Tech Stack
+
+- **Frontend**: React, TypeScript, Tailwind CSS, React Router
+- **Backend**: Rust, Tauri v2
+- **Storage**: tauri-plugin-store (local persistence)
+- **API**: tauri-plugin-http (GitHub API integration)
+
+## Development
+
+### Recommended IDE Setup
+
+- [VS Code](https://code.visualstudio.com/)
+- [Tauri Extension](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode)
+- [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+
+## License
+
+MIT
