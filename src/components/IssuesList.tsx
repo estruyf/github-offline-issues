@@ -6,7 +6,7 @@ import type { OfflineIssue } from "../types";
 export function IssuesList() {
   const { repoId } = useParams<{ repoId: string }>();
   const navigate = useNavigate();
-  const { offlineData, repositories, syncRepository, syncStatus } = useApp();
+  const { offlineData, repositories, syncRepository, syncStatus, pendingReplies } = useApp();
 
   const [filter, setFilter] = useState<"all" | "open" | "closed">("all");
   const [search, setSearch] = useState("");
@@ -16,6 +16,9 @@ export function IssuesList() {
   const offline = offlineData.get(decodedRepoId);
   const status = syncStatus.get(decodedRepoId);
   const isSyncing = status?.syncing;
+
+  // Count pending replies for this repository
+  const repoPendingRepliesCount = pendingReplies.filter((r) => r.repoId === decodedRepoId).length;
 
   const filteredIssues = useMemo(() => {
     if (!offline?.issues) return [];
@@ -108,7 +111,7 @@ export function IssuesList() {
             <button
               onClick={handleSync}
               disabled={isSyncing}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white rounded-lg transition-colors flex items-center gap-2"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white rounded-lg transition-colors flex items-center gap-2 relative"
             >
               {isSyncing ? (
                 <>
@@ -127,10 +130,20 @@ export function IssuesList() {
                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
                     />
                   </svg>
-                  Syncing...
+                  {status?.progress || "Syncing..."}
                 </>
               ) : (
-                "Sync"
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Sync
+                  {repoPendingRepliesCount > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-yellow-500 text-gray-900 text-xs font-bold px-1.5 py-0.5 rounded-full min-w-5 text-center">
+                      {repoPendingRepliesCount}
+                    </span>
+                  )}
+                </>
               )}
             </button>
           </div>
@@ -150,8 +163,8 @@ export function IssuesList() {
                   key={state}
                   onClick={() => setFilter(state)}
                   className={`px-4 py-2 text-sm capitalize transition-colors ${filter === state
-                      ? "bg-blue-600 text-white"
-                      : "text-gray-300 hover:bg-gray-600"
+                    ? "bg-blue-600 text-white"
+                    : "text-gray-300 hover:bg-gray-600"
                     }`}
                 >
                   {state}
@@ -198,6 +211,7 @@ export function IssuesList() {
               <IssueCard
                 key={issue.id}
                 issue={issue}
+                pendingRepliesCount={pendingReplies.filter((r) => r.repoId === decodedRepoId && r.issueNumber === issue.number).length}
                 onClick={() =>
                   navigate(
                     `/repo/${encodeURIComponent(decodedRepoId)}/issue/${issue.number}`
@@ -214,9 +228,11 @@ export function IssuesList() {
 
 function IssueCard({
   issue,
+  pendingRepliesCount,
   onClick,
 }: {
   issue: OfflineIssue;
+  pendingRepliesCount: number;
   onClick: () => void;
 }) {
   return (
@@ -291,6 +307,27 @@ function IssueCard({
                     />
                   </svg>
                   {issue.comments}
+                </span>
+              </>
+            )}
+            {pendingRepliesCount > 0 && (
+              <>
+                <span>•</span>
+                <span className="flex items-center gap-1 text-yellow-400">
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                  {pendingRepliesCount} pending
                 </span>
               </>
             )}

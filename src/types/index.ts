@@ -74,3 +74,11 @@ export interface SyncStatus {
   isSyncing: boolean;
   lastSynced?: string;
 }
+
+export interface PendingReply {
+  id: string;
+  repoId: string;
+  issueNumber: number;
+  body: string;
+  created_at: string;
+}

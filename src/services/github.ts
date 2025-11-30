@@ -16,15 +16,19 @@ interface GitHubApiOptions {
 
 async function githubFetch<T>(
   endpoint: string,
-  options: GitHubApiOptions
+  options: GitHubApiOptions & { method?: string; body?: unknown }
 ): Promise<T> {
+  const { token, method = "GET", body } = options;
+
   const response = await fetch(`${GITHUB_API_BASE}${endpoint}`, {
-    method: "GET",
+    method,
     headers: {
-      Authorization: `Bearer ${options.token}`,
+      Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github.v3+json",
       "User-Agent": "GitHub-Offline-Issues-Tauri-App",
+      ...(body ? { "Content-Type": "application/json" } : {}),
     },
+    ...(body ? { body: JSON.stringify(body) } : {}),
   });
 
   if (!response.ok) {
@@ -159,4 +163,17 @@ export async function searchRepositories(
     full_name: item.full_name,
     description: item.description || "",
   }));
+}
+
+export async function postIssueComment(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  body: string,
+  token: string
+): Promise<GitHubComment> {
+  return await githubFetch<GitHubComment>(
+    `/repos/${owner}/${repo}/issues/${issueNumber}/comments`,
+    { token, method: "POST", body: { body } }
+  );
 }

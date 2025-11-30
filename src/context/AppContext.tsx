@@ -6,7 +6,7 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import type { Repository, OfflineRepository, GitHubUser } from "../types";
+import type { Repository, OfflineRepository, GitHubUser, PendingReply } from "../types";
 import {
   getToken,
   saveToken,
@@ -16,10 +16,15 @@ import {
   removeRepository as removeRepoFromStore,
   getOfflineRepository,
   saveOfflineRepository,
+  getPendingReplies as getPendingRepliesFromStore,
+  addPendingReply as addPendingReplyToStore,
+  removePendingReply as removePendingReplyFromStore,
+  getPendingRepliesForRepo,
 } from "../services/storage";
 import {
   validateToken,
   fetchAllIssuesWithComments,
+  postIssueComment,
 } from "../services/github";
 
 interface AppContextType {
@@ -30,12 +35,15 @@ interface AppContextType {
   repositories: Repository[];
   offlineData: Map<string, OfflineRepository>;
   syncStatus: Map<string, { syncing: boolean; progress?: string }>;
+  pendingReplies: PendingReply[];
   login: (token: string) => Promise<void>;
   logout: () => Promise<void>;
   addRepository: (owner: string, name: string) => Promise<void>;
   removeRepository: (repoId: string) => Promise<void>;
   syncRepository: (repo: Repository) => Promise<void>;
   refreshOfflineData: () => Promise<void>;
+  addPendingReply: (repoId: string, issueNumber: number, body: string) => Promise<void>;
+  removePendingReply: (replyId: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -52,6 +60,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [syncStatus, setSyncStatus] = useState<
     Map<string, { syncing: boolean; progress?: string }>
   >(new Map());
+  const [pendingReplies, setPendingReplies] = useState<PendingReply[]>([]);
 
   const refreshOfflineData = useCallback(async () => {
     const repos = await getRepositories();
@@ -65,6 +74,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     setOfflineData(newOfflineData);
+
+    // Also refresh pending replies
+    const replies = await getPendingRepliesFromStore();
+    setPendingReplies(replies);
   }, []);
 
   // Initialize app state
@@ -73,6 +86,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         const savedToken = await getToken();
         const savedRepos = await getRepositories();
+        const savedReplies = await getPendingRepliesFromStore();
 
         if (savedToken) {
           try {
@@ -87,6 +101,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
 
         setRepositories(savedRepos);
+        setPendingReplies(savedReplies);
         await refreshOfflineData();
       } catch (error) {
         console.error("Failed to initialize app:", error);
@@ -156,6 +171,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
 
     try {
+      // First, publish any pending replies for this repository
+      const repoPendingReplies = await getPendingRepliesForRepo(repo.id);
+
+      if (repoPendingReplies.length > 0) {
+        setSyncStatus((prev) => {
+          const newStatus = new Map(prev);
+          newStatus.set(repo.id, {
+            syncing: true,
+            progress: `Publishing ${repoPendingReplies.length} pending replies...`,
+          });
+          return newStatus;
+        });
+
+        for (let i = 0; i < repoPendingReplies.length; i++) {
+          const reply = repoPendingReplies[i];
+          setSyncStatus((prev) => {
+            const newStatus = new Map(prev);
+            newStatus.set(repo.id, {
+              syncing: true,
+              progress: `Publishing reply ${i + 1}/${repoPendingReplies.length}...`,
+            });
+            return newStatus;
+          });
+
+          await postIssueComment(
+            repo.owner,
+            repo.name,
+            reply.issueNumber,
+            reply.body,
+            token
+          );
+
+          // Remove the reply from storage after successful publish
+          await removePendingReplyFromStore(reply.id);
+        }
+
+        // Update local state
+        setPendingReplies((prev) => prev.filter((r) => r.repoId !== repo.id));
+      }
+
+      // Then fetch the latest issues and comments
       const issues = await fetchAllIssuesWithComments(
         repo.owner,
         repo.name,
@@ -197,6 +253,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const addPendingReply = async (repoId: string, issueNumber: number, body: string) => {
+    const reply: PendingReply = {
+      id: `${repoId}-${issueNumber}-${Date.now()}`,
+      repoId,
+      issueNumber,
+      body,
+      created_at: new Date().toISOString(),
+    };
+
+    await addPendingReplyToStore(reply);
+    setPendingReplies((prev) => [...prev, reply]);
+  };
+
+  const removePendingReply = async (replyId: string) => {
+    await removePendingReplyFromStore(replyId);
+    setPendingReplies((prev) => prev.filter((r) => r.id !== replyId));
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -207,12 +281,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         repositories,
         offlineData,
         syncStatus,
+        pendingReplies,
         login,
         logout,
         addRepository,
         removeRepository,
         syncRepository,
         refreshOfflineData,
+        addPendingReply,
+        removePendingReply,
       }}
     >
       {children}

@@ -4,6 +4,7 @@ import type {
   Repository,
   OfflineRepository,
   OfflineIssue,
+  PendingReply,
 } from "../types";
 
 let appStore: Store | null = null;
@@ -121,4 +122,44 @@ export async function getAppState(): Promise<AppState> {
   const token = await getToken();
   const repositories = await getRepositories();
   return { token, repositories };
+}
+
+// Pending replies management
+export async function getPendingReplies(): Promise<PendingReply[]> {
+  const store = await getAppStore();
+  const replies = await store.get<PendingReply[]>("pending_replies");
+  return replies || [];
+}
+
+export async function addPendingReply(reply: PendingReply): Promise<void> {
+  const store = await getAppStore();
+  const replies = await getPendingReplies();
+  replies.push(reply);
+  await store.set("pending_replies", replies);
+  await store.save();
+}
+
+export async function removePendingReply(replyId: string): Promise<void> {
+  const store = await getAppStore();
+  const replies = await getPendingReplies();
+  const filtered = replies.filter((r) => r.id !== replyId);
+  await store.set("pending_replies", filtered);
+  await store.save();
+}
+
+export async function getPendingRepliesForRepo(
+  repoId: string
+): Promise<PendingReply[]> {
+  const replies = await getPendingReplies();
+  return replies.filter((r) => r.repoId === repoId);
+}
+
+export async function clearPendingRepliesForRepo(
+  repoId: string
+): Promise<void> {
+  const store = await getAppStore();
+  const replies = await getPendingReplies();
+  const filtered = replies.filter((r) => r.repoId !== repoId);
+  await store.set("pending_replies", filtered);
+  await store.save();
 }
