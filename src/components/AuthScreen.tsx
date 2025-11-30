@@ -27,7 +27,7 @@ export function AuthScreen() {
       <div className="max-w-md w-full space-y-8 p-8">
         <div className="text-center">
           <h1 className="text-3xl font-bold text-white">
-            GitHub Issues Offline
+            GitHub Offline Issues
           </h1>
           <p className="mt-2 text-gray-400">
             Take your GitHub issues offline for when you're on the go

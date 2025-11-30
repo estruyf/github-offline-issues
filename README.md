@@ -1,4 +1,4 @@
-# GitHub Issues Offline
+# GitHub Offline Issues
 
 A desktop application built with Tauri that lets you take your GitHub issues
 offline. Perfect for when you're commuting on a plane, train, or anywhere

@@ -23,7 +23,7 @@ async function githubFetch<T>(
     headers: {
       Authorization: `Bearer ${options.token}`,
       Accept: "application/vnd.github.v3+json",
-      "User-Agent": "GitHub-Issues-Offline-Tauri-App",
+      "User-Agent": "GitHub-Offline-Issues-Tauri-App",
     },
   });
 
