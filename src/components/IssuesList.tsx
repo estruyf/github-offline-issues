@@ -149,11 +149,10 @@ export function IssuesList() {
                 <button
                   key={state}
                   onClick={() => setFilter(state)}
-                  className={`px-4 py-2 text-sm capitalize transition-colors ${
-                    filter === state
+                  className={`px-4 py-2 text-sm capitalize transition-colors ${filter === state
                       ? "bg-blue-600 text-white"
                       : "text-gray-300 hover:bg-gray-600"
-                  }`}
+                    }`}
                 >
                   {state}
                 </button>
@@ -228,9 +227,8 @@ function IssueCard({
       <div className="flex items-start gap-3">
         {/* State icon */}
         <div
-          className={`mt-1 ${
-            issue.state === "open" ? "text-green-500" : "text-purple-500"
-          }`}
+          className={`mt-1 ${issue.state === "open" ? "text-green-500" : "text-purple-500"
+            }`}
         >
           {issue.state === "open" ? (
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

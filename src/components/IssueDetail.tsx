@@ -73,11 +73,10 @@ export function IssueDetail() {
         <div className="mb-6">
           <div className="flex items-center gap-3 mb-4">
             <span
-              className={`px-3 py-1 rounded-full text-sm font-medium ${
-                issue.state === "open"
+              className={`px-3 py-1 rounded-full text-sm font-medium ${issue.state === "open"
                   ? "bg-green-900/50 text-green-400 border border-green-700"
                   : "bg-purple-900/50 text-purple-400 border border-purple-700"
-              }`}
+                }`}
             >
               {issue.state === "open" ? "Open" : "Closed"}
             </span>
@@ -210,7 +209,7 @@ function MarkdownContent({ content }: { content: string }) {
   // Simple markdown-like rendering
   // In a real app, you'd use a proper markdown renderer like react-markdown
   const lines = content.split("\n");
-  
+
   return (
     <div className="whitespace-pre-wrap break-words text-gray-300">
       {lines.map((line, i) => {
@@ -236,12 +235,12 @@ function MarkdownContent({ content }: { content: string }) {
             </h1>
           );
         }
-        
+
         // Code blocks (simple detection)
         if (line.startsWith("```")) {
           return null; // Skip code block markers
         }
-        
+
         // List items
         if (line.match(/^[-*] /)) {
           return (
@@ -251,12 +250,12 @@ function MarkdownContent({ content }: { content: string }) {
             </div>
           );
         }
-        
+
         // Empty lines
         if (!line.trim()) {
           return <br key={i} />;
         }
-        
+
         // Regular text
         return <div key={i}>{line}</div>;
       })}

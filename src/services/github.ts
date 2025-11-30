@@ -56,7 +56,8 @@ export async function fetchRepositoryIssues(
 
     // Filter out pull requests (they come in the issues endpoint too)
     const realIssues = issues.filter(
-      (issue) => !(issue as GitHubIssue & { pull_request?: unknown }).pull_request
+      (issue) =>
+        !(issue as GitHubIssue & { pull_request?: unknown }).pull_request
     );
     allIssues.push(...realIssues);
 
@@ -107,14 +108,19 @@ export async function fetchAllIssuesWithComments(
 
   for (let i = 0; i < issues.length; i++) {
     const issue = issues[i];
-    
+
     if (onProgress) {
       onProgress(i + 1, issues.length);
     }
 
     let comments_data: GitHubComment[] = [];
     if (issue.comments > 0) {
-      comments_data = await fetchIssueComments(owner, repo, issue.number, token);
+      comments_data = await fetchIssueComments(
+        owner,
+        repo,
+        issue.number,
+        token
+      );
     }
 
     offlineIssues.push({
@@ -130,7 +136,9 @@ export async function fetchAllIssuesWithComments(
 export async function searchRepositories(
   query: string,
   token: string
-): Promise<Array<{ owner: string; name: string; full_name: string; description: string }>> {
+): Promise<
+  Array<{ owner: string; name: string; full_name: string; description: string }>
+> {
   interface SearchResult {
     items: Array<{
       full_name: string;

@@ -66,7 +66,7 @@ export async function removeRepository(repoId: string): Promise<void> {
   const filtered = repos.filter((r) => r.id !== repoId);
   await store.set("repositories", filtered);
   await store.save();
-  
+
   // Also remove offline data
   await clearOfflineData(repoId);
 }
