@@ -5,6 +5,7 @@ import type {
   OfflineRepository,
   OfflineIssue,
   PendingReply,
+  LocalIssue,
 } from "../types";
 
 let appStore: Store | null = null;
@@ -162,4 +163,34 @@ export async function clearPendingRepliesForRepo(
   const filtered = replies.filter((r) => r.repoId !== repoId);
   await store.set("pending_replies", filtered);
   await store.save();
+}
+
+// Local issues management
+export async function getLocalIssues(): Promise<LocalIssue[]> {
+  const store = await getAppStore();
+  const issues = await store.get<LocalIssue[]>("local_issues");
+  return issues || [];
+}
+
+export async function addLocalIssue(issue: LocalIssue): Promise<void> {
+  const store = await getAppStore();
+  const issues = await getLocalIssues();
+  issues.push(issue);
+  await store.set("local_issues", issues);
+  await store.save();
+}
+
+export async function removeLocalIssue(issueId: string): Promise<void> {
+  const store = await getAppStore();
+  const issues = await getLocalIssues();
+  const filtered = issues.filter((i) => i.id !== issueId);
+  await store.set("local_issues", filtered);
+  await store.save();
+}
+
+export async function getLocalIssuesForRepo(
+  repoId: string
+): Promise<LocalIssue[]> {
+  const issues = await getLocalIssues();
+  return issues.filter((i) => i.repoId === repoId);
 }

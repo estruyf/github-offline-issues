@@ -177,3 +177,89 @@ export async function postIssueComment(
     { token, method: "POST", body: { body } }
   );
 }
+
+export async function createIssue(
+  owner: string,
+  repo: string,
+  title: string,
+  body: string,
+  labels: string[],
+  token: string
+): Promise<GitHubIssue> {
+  return await githubFetch<GitHubIssue>(`/repos/${owner}/${repo}/issues`, {
+    token,
+    method: "POST",
+    body: { title, body, labels },
+  });
+}
+
+export async function fetchRepositoryIssuesSince(
+  owner: string,
+  repo: string,
+  since: string,
+  token: string
+): Promise<GitHubIssue[]> {
+  const allIssues: GitHubIssue[] = [];
+  let page = 1;
+  const perPage = 100;
+
+  while (true) {
+    const issues = await githubFetch<GitHubIssue[]>(
+      `/repos/${owner}/${repo}/issues?state=all&since=${encodeURIComponent(
+        since
+      )}&per_page=${perPage}&page=${page}`,
+      { token }
+    );
+
+    // Filter out pull requests (they come in the issues endpoint too)
+    const realIssues = issues.filter(
+      (issue) =>
+        !(issue as GitHubIssue & { pull_request?: unknown }).pull_request
+    );
+    allIssues.push(...realIssues);
+
+    if (issues.length < perPage) {
+      break;
+    }
+    page++;
+  }
+
+  return allIssues;
+}
+
+export async function fetchUpdatedIssuesWithComments(
+  owner: string,
+  repo: string,
+  since: string,
+  token: string,
+  onProgress?: (current: number, total: number) => void
+): Promise<OfflineIssue[]> {
+  const issues = await fetchRepositoryIssuesSince(owner, repo, since, token);
+  const offlineIssues: OfflineIssue[] = [];
+
+  for (let i = 0; i < issues.length; i++) {
+    const issue = issues[i];
+
+    if (onProgress) {
+      onProgress(i + 1, issues.length);
+    }
+
+    let comments_data: GitHubComment[] = [];
+    if (issue.comments > 0) {
+      comments_data = await fetchIssueComments(
+        owner,
+        repo,
+        issue.number,
+        token
+      );
+    }
+
+    offlineIssues.push({
+      ...issue,
+      comments_data,
+      synced_at: new Date().toISOString(),
+    });
+  }
+
+  return offlineIssues;
+}

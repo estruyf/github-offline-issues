@@ -82,3 +82,12 @@ export interface PendingReply {
   body: string;
   created_at: string;
 }
+
+export interface LocalIssue {
+  id: string;
+  repoId: string;
+  title: string;
+  body: string;
+  labels: string[];
+  created_at: string;
+}

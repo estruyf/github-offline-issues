@@ -1,16 +1,30 @@
 import { useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useApp } from "../context/AppContext";
-import type { OfflineIssue } from "../types";
-import { ArrowLeft, RefreshCw, Loader, MessageSquare } from "lucide-react";
+import type { OfflineIssue, LocalIssue } from "../types";
+import { ArrowLeft, RefreshCw, Loader, MessageSquare, Plus, Download, X, Clock, Trash2 } from "lucide-react";
 
 export function IssuesList() {
   const { repoId } = useParams<{ repoId: string }>();
   const navigate = useNavigate();
-  const { offlineData, repositories, syncRepository, syncStatus, pendingReplies } = useApp();
+  const {
+    offlineData,
+    repositories,
+    syncRepository,
+    incrementalSyncRepository,
+    syncStatus,
+    pendingReplies,
+    localIssues,
+    addLocalIssue,
+    removeLocalIssue,
+  } = useApp();
 
   const [filter, setFilter] = useState<"all" | "open" | "closed">("open");
   const [search, setSearch] = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newIssueTitle, setNewIssueTitle] = useState("");
+  const [newIssueBody, setNewIssueBody] = useState("");
+  const [newIssueLabels, setNewIssueLabels] = useState("");
 
   const decodedRepoId = repoId ? decodeURIComponent(repoId) : "";
   const repo = repositories.find((r) => r.id === decodedRepoId);
@@ -20,6 +34,12 @@ export function IssuesList() {
 
   // Count pending replies for this repository
   const repoPendingRepliesCount = pendingReplies.filter((r) => r.repoId === decodedRepoId).length;
+
+  // Get local issues for this repository
+  const repoLocalIssues = localIssues.filter((i) => i.repoId === decodedRepoId);
+
+  // Total pending items (replies + local issues)
+  const totalPendingCount = repoPendingRepliesCount + repoLocalIssues.length;
 
   const filteredIssues = useMemo(() => {
     if (!offline?.issues) return [];
@@ -60,6 +80,31 @@ export function IssuesList() {
     }
   };
 
+  const handleIncrementalSync = async () => {
+    if (!repo) return;
+    try {
+      await incrementalSyncRepository(repo);
+    } catch (error) {
+      alert(`Failed to sync: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  };
+
+  const handleCreateLocalIssue = async () => {
+    if (!newIssueTitle.trim()) return;
+
+    const labels = newIssueLabels
+      .split(",")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    await addLocalIssue(decodedRepoId, newIssueTitle.trim(), newIssueBody.trim(), labels);
+
+    setNewIssueTitle("");
+    setNewIssueBody("");
+    setNewIssueLabels("");
+    setShowCreateModal(false);
+  };
+
   if (!repo) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -98,10 +143,41 @@ export function IssuesList() {
                 </p>
               )}
             </div>
+
+            {/* Create Issue Button */}
+            <button
+              onClick={() => setShowCreateModal(true)}
+              disabled={isSyncing}
+              className="px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white rounded-lg transition-colors flex items-center gap-2"
+              title="Create local issue"
+            >
+              <Plus className="w-4 h-4" />
+              New Issue
+            </button>
+
+            {/* Incremental Sync Button */}
+            {offline?.last_synced && (
+              <button
+                onClick={handleIncrementalSync}
+                disabled={isSyncing}
+                className="px-3 py-2 bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                title="Fetch only changes since last sync"
+              >
+                {isSyncing ? (
+                  <Loader className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+                Quick Sync
+              </button>
+            )}
+
+            {/* Full Sync Button */}
             <button
               onClick={handleSync}
               disabled={isSyncing}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white rounded-lg transition-colors flex items-center gap-2 relative"
+              title="Full sync - fetch all issues"
             >
               {isSyncing ? (
                 <>
@@ -111,10 +187,10 @@ export function IssuesList() {
               ) : (
                 <>
                   <RefreshCw className="w-4 h-4" />
-                  Sync
-                  {repoPendingRepliesCount > 0 && (
+                  Full Sync
+                  {totalPendingCount > 0 && (
                     <span className="absolute -top-2 -right-2 bg-yellow-500 text-gray-900 text-xs font-bold px-1.5 py-0.5 rounded-full min-w-5 text-center">
-                      {repoPendingRepliesCount}
+                      {totalPendingCount}
                     </span>
                   )}
                 </>
@@ -160,6 +236,28 @@ export function IssuesList() {
 
       {/* Main content */}
       <main className="max-w-5xl mx-auto px-4 py-6">
+        {/* Local Issues Section */}
+        {repoLocalIssues.length > 0 && (
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-3">
+              <Clock className="w-5 h-5 text-yellow-500" />
+              Local Issues ({repoLocalIssues.length})
+              <span className="text-sm font-normal text-gray-400">
+                — will be created on sync
+              </span>
+            </h2>
+            <div className="space-y-2">
+              {repoLocalIssues.map((issue) => (
+                <LocalIssueCard
+                  key={issue.id}
+                  issue={issue}
+                  onDelete={() => removeLocalIssue(issue.id)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         {!offline ? (
           <div className="text-center py-16">
             <div className="text-gray-400 text-lg mb-4">
@@ -173,7 +271,7 @@ export function IssuesList() {
               Take offline now
             </button>
           </div>
-        ) : filteredIssues.length === 0 ? (
+        ) : filteredIssues.length === 0 && repoLocalIssues.length === 0 ? (
           <div className="text-center py-16 text-gray-400">
             {search || filter !== "all"
               ? "No issues match your search"
@@ -196,6 +294,76 @@ export function IssuesList() {
           </div>
         )}
       </main>
+
+      {/* Create Issue Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-lg">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+              <h2 className="text-lg font-semibold text-white">Create Local Issue</h2>
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">
+                  Title *
+                </label>
+                <input
+                  type="text"
+                  value={newIssueTitle}
+                  onChange={(e) => setNewIssueTitle(e.target.value)}
+                  placeholder="Issue title"
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">
+                  Description
+                </label>
+                <textarea
+                  value={newIssueBody}
+                  onChange={(e) => setNewIssueBody(e.target.value)}
+                  placeholder="Describe the issue... (Markdown supported)"
+                  rows={5}
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">
+                  Labels
+                </label>
+                <input
+                  type="text"
+                  value={newIssueLabels}
+                  onChange={(e) => setNewIssueLabels(e.target.value)}
+                  placeholder="bug, enhancement, help wanted (comma separated)"
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 text-gray-300 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateLocalIssue}
+                  disabled={!newIssueTitle.trim()}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
+                >
+                  Create Local Issue
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -276,19 +444,7 @@ function IssueCard({
               <>
                 <span>•</span>
                 <span className="flex items-center gap-1 text-yellow-400">
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
+                  <Clock className="w-4 h-4" />
                   {pendingRepliesCount} pending
                 </span>
               </>
@@ -315,6 +471,71 @@ function IssueCard({
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function LocalIssueCard({
+  issue,
+  onDelete,
+}: {
+  issue: LocalIssue;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="bg-gray-800 rounded-lg p-4 border border-yellow-700/50 hover:border-yellow-600/50 transition-colors">
+      <div className="flex items-start gap-3">
+        {/* Pending icon */}
+        <div className="mt-1 text-yellow-500">
+          <Clock className="w-5 h-5" />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <h3 className="font-medium text-white">
+            <span className="text-yellow-500">[Local]</span> {issue.title}
+          </h3>
+
+          {/* Labels */}
+          {issue.labels.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {issue.labels.map((label, idx) => (
+                <span
+                  key={idx}
+                  className="px-2 py-0.5 text-xs rounded-full bg-gray-700 text-gray-300 border border-gray-600"
+                >
+                  {label}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Meta info */}
+          <div className="mt-2 flex items-center gap-3 text-sm text-gray-400">
+            <span>Created locally on {new Date(issue.created_at).toLocaleDateString()}</span>
+            <span>•</span>
+            <span className="text-yellow-400">Will be created on sync</span>
+          </div>
+
+          {/* Body preview */}
+          {issue.body && (
+            <p className="mt-2 text-sm text-gray-400 line-clamp-2">
+              {issue.body}
+            </p>
+          )}
+        </div>
+
+        {/* Delete button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="text-gray-400 hover:text-red-400 transition-colors p-1"
+          title="Delete local issue"
+        >
+          <Trash2 className="w-5 h-5" />
+        </button>
       </div>
     </div>
   );
