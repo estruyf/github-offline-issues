@@ -30,4 +30,20 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // React core
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          // Markdown rendering
+          'markdown': ['react-markdown', 'remark-gfm'],
+          // Syntax highlighting (largest dependency)
+          'syntax-highlighter': ['react-syntax-highlighter'],
+          // Icons
+          'icons': ['lucide-react'],
+        },
+      },
+    },
+  },
 }));

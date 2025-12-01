@@ -1,11 +1,12 @@
 <div align="center">
   <img src="app-icon.png" alt="GitHub Offline Issues Icon" width="128" height="128">
-                          
+                            
   # GitHub Offline Issues
-                          
+                            
   **A desktop application built with Tauri that lets you take your GitHub issues
   offline. Perfect for when you're commuting on a plane, train, or anywhere
   without connectivity.**
+                            
                           
                         
                       
@@ -23,7 +24,7 @@
   [![Tauri](https://img.shields.io/badge/Tauri-2.0-24C8DB.svg)](https://tauri.app/)
   [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6.svg)](https://www.typescriptlang.org/)
   [![React](https://img.shields.io/badge/React-19.1-61DAFB.svg)](https://reactjs.org/)
-                          
+                            
   <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
 </div>
 
@@ -32,10 +33,15 @@
 - **GitHub Authentication** - Sign in with your GitHub Personal Access Token
 - **Repository Management** - Add and manage multiple repositories
 - **Offline Sync** - Download all issues and comments for offline access
+- **Incremental Sync** - Quick sync to fetch only changes since last sync
 - **Search & Filter** - Find issues by title, body, or number; filter by
   open/closed state
 - **Full Issue Details** - View complete issue content including labels,
-  assignees, milestones, and comments
+  assignees, milestones, and comments with proper Markdown rendering
+- **Offline Replies** - Write replies to issues while offline, automatically
+  published on next sync
+- **Local Issue Creation** - Create new issues locally that get published when
+  you sync
 
 ## Getting Started
 
