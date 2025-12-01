@@ -35,13 +35,13 @@ export default defineConfig(async () => ({
       output: {
         manualChunks: {
           // React core
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          "react-vendor": ["react", "react-dom", "react-router-dom"],
           // Markdown rendering
-          'markdown': ['react-markdown', 'remark-gfm'],
+          markdown: ["react-markdown", "remark-gfm"],
           // Syntax highlighting (largest dependency)
-          'syntax-highlighter': ['react-syntax-highlighter'],
+          "syntax-highlighter": ["react-syntax-highlighter"],
           // Icons
-          'icons': ['lucide-react'],
+          icons: ["lucide-react"],
         },
       },
     },
