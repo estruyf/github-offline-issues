@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useApp } from "../context/AppContext";
 import type { GitHubComment, PendingReply } from "../types";
@@ -18,7 +18,8 @@ import css from "react-syntax-highlighter/dist/esm/languages/prism/css";
 import python from "react-syntax-highlighter/dist/esm/languages/prism/python";
 import rust from "react-syntax-highlighter/dist/esm/languages/prism/rust";
 import yaml from "react-syntax-highlighter/dist/esm/languages/prism/yaml";
-import { ArrowLeft, ExternalLink, Send, Trash2, CornerDownRight } from "lucide-react";
+import { ArrowLeft, ExternalLink, Send, Trash2, CornerDownRight, XCircle, CheckCircle, Tag, X, Check } from "lucide-react";
+import { getCachedImageAsDataUrl } from "../services/imageCache";
 
 // Register languages
 SyntaxHighlighter.registerLanguage("javascript", javascript);
@@ -47,15 +48,56 @@ export function IssueDetail() {
     issueNumber: string;
   }>();
   const navigate = useNavigate();
-  const { offlineData, repositories, pendingReplies, addPendingReply, removePendingReply } = useApp();
+  const {
+    offlineData,
+    repositories,
+    pendingReplies,
+    addPendingReply,
+    removePendingReply,
+    pendingStateChanges,
+    pendingLabelUpdates,
+    repositoryLabels,
+    addPendingStateChange,
+    removePendingStateChange,
+    addPendingLabelUpdate,
+    getEffectiveIssueState,
+    getEffectiveIssueLabels,
+    fetchLabelsForRepo,
+  } = useApp();
   const [replyText, setReplyText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showLabelEditor, setShowLabelEditor] = useState(false);
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
 
   const decodedRepoId = repoId ? decodeURIComponent(repoId) : "";
   const repo = repositories.find((r) => r.id === decodedRepoId);
   const offline = offlineData.get(decodedRepoId);
   const issue = offline?.issues.find(
     (i) => i.number === parseInt(issueNumber || "0")
+  );
+
+  // Get available labels for this repository
+  const availableLabels = repositoryLabels.get(decodedRepoId) || [];
+
+  // Fetch labels when component mounts if not already loaded
+  useEffect(() => {
+    if (repo && availableLabels.length === 0) {
+      fetchLabelsForRepo(repo);
+    }
+  }, [repo, availableLabels.length, fetchLabelsForRepo]);
+
+  // Get effective state and labels (considering pending changes)
+  const effectiveState = issue ? getEffectiveIssueState(decodedRepoId, issue.number, issue.state) : "open";
+  const effectiveLabels = issue ? getEffectiveIssueLabels(decodedRepoId, issue.number, issue.labels) : [];
+
+  // Check if there's a pending state change for this issue
+  const hasPendingStateChange = issue && pendingStateChanges.some(
+    (c) => c.repoId === decodedRepoId && c.issueNumber === issue.number
+  );
+
+  // Check if there's a pending label update for this issue
+  const hasPendingLabelUpdate = issue && pendingLabelUpdates.some(
+    (u) => u.repoId === decodedRepoId && u.issueNumber === issue.number
   );
 
   // Get pending replies for this issue
@@ -76,6 +118,45 @@ export function IssueDetail() {
 
   const handleDeletePendingReply = async (replyId: string) => {
     await removePendingReply(replyId);
+  };
+
+  const handleToggleState = async () => {
+    if (!issue) return;
+    const newState = effectiveState === "open" ? "closed" : "open";
+    await addPendingStateChange(decodedRepoId, issue.number, newState);
+  };
+
+  const handleCancelStateChange = async () => {
+    if (!issue) return;
+    const pendingChange = pendingStateChanges.find(
+      (c) => c.repoId === decodedRepoId && c.issueNumber === issue.number
+    );
+    if (pendingChange) {
+      await removePendingStateChange(pendingChange.id);
+    }
+  };
+
+  const handleOpenLabelEditor = () => {
+    setSelectedLabels(effectiveLabels.map(l => l.name));
+    setShowLabelEditor(true);
+  };
+
+  const handleSaveLabels = async () => {
+    if (!issue) return;
+    await addPendingLabelUpdate(decodedRepoId, issue.number, selectedLabels);
+    setShowLabelEditor(false);
+  };
+
+  const handleCancelLabelEdit = () => {
+    setShowLabelEditor(false);
+  };
+
+  const toggleLabel = (labelName: string) => {
+    setSelectedLabels(prev =>
+      prev.includes(labelName)
+        ? prev.filter(l => l !== labelName)
+        : [...prev, labelName]
+    );
   };
 
   if (!repo || !issue) {
@@ -135,13 +216,48 @@ export function IssueDetail() {
         <div className="mb-6">
           <div className="flex items-center gap-3 mb-4">
             <span
-              className={`px-3 py-1 rounded-full text-sm font-medium ${issue.state === "open"
+              className={`px-3 py-1 rounded-full text-sm font-medium ${effectiveState === "open"
                 ? "bg-green-900/50 text-green-400 border border-green-700"
                 : "bg-purple-900/50 text-purple-400 border border-purple-700"
                 }`}
             >
-              {issue.state === "open" ? "Open" : "Closed"}
+              {effectiveState === "open" ? "Open" : "Closed"}
+              {hasPendingStateChange && (
+                <span className="ml-1 text-yellow-400">(pending)</span>
+              )}
             </span>
+
+            {/* Close/Reopen button */}
+            <button
+              onClick={handleToggleState}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-sm font-medium transition-colors ${effectiveState === "open"
+                  ? "bg-purple-900/50 text-purple-400 hover:bg-purple-900/70 border border-purple-700"
+                  : "bg-green-900/50 text-green-400 hover:bg-green-900/70 border border-green-700"
+                }`}
+            >
+              {effectiveState === "open" ? (
+                <>
+                  <XCircle className="w-4 h-4" />
+                  Close Issue
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  Reopen Issue
+                </>
+              )}
+            </button>
+
+            {hasPendingStateChange && (
+              <button
+                onClick={handleCancelStateChange}
+                className="text-sm text-gray-400 hover:text-white"
+                title="Cancel pending state change"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+
             <span className="text-gray-400">
               <span className="text-white">{issue.user.login}</span> opened this
               issue on {new Date(issue.created_at).toLocaleDateString()}
@@ -149,21 +265,78 @@ export function IssueDetail() {
           </div>
 
           {/* Labels */}
-          {issue.labels.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-4">
-              {issue.labels.map((label) => (
-                <span
-                  key={label.id}
-                  className="px-2.5 py-1 text-sm rounded-full"
-                  style={{
-                    backgroundColor: `#${label.color}20`,
-                    color: `#${label.color}`,
-                    border: `1px solid #${label.color}50`,
-                  }}
-                >
-                  {label.name}
-                </span>
-              ))}
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            {effectiveLabels.map((label) => (
+              <span
+                key={label.name}
+                className="px-2.5 py-1 text-sm rounded-full"
+                style={{
+                  backgroundColor: `#${label.color}20`,
+                  color: `#${label.color}`,
+                  border: `1px solid #${label.color}50`,
+                }}
+              >
+                {label.name}
+              </span>
+            ))}
+            {hasPendingLabelUpdate && (
+              <span className="text-xs text-yellow-400">(pending)</span>
+            )}
+            <button
+              onClick={handleOpenLabelEditor}
+              className="flex items-center gap-1 px-2 py-1 text-sm text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+              title="Edit labels"
+            >
+              <Tag className="w-4 h-4" />
+              Edit
+            </button>
+          </div>
+
+          {/* Label Editor Modal */}
+          {showLabelEditor && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+              <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 max-w-md w-full mx-4 max-h-[80vh] overflow-y-auto">
+                <h3 className="text-lg font-semibold text-white mb-4">Edit Labels</h3>
+                <div className="space-y-2 mb-4">
+                  {availableLabels.length === 0 ? (
+                    <p className="text-gray-400 text-sm">No labels available. Sync the repository to load labels.</p>
+                  ) : (
+                    availableLabels.map((label) => (
+                      <button
+                        key={label.name}
+                        onClick={() => toggleLabel(label.name)}
+                        className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${selectedLabels.includes(label.name)
+                            ? "bg-gray-700"
+                            : "hover:bg-gray-700/50"
+                          }`}
+                      >
+                        <div
+                          className="w-4 h-4 rounded-full"
+                          style={{ backgroundColor: `#${label.color}` }}
+                        />
+                        <span className="text-white flex-1">{label.name}</span>
+                        {selectedLabels.includes(label.name) && (
+                          <Check className="w-4 h-4 text-green-400" />
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={handleCancelLabelEdit}
+                    className="px-4 py-2 text-gray-400 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveLabels}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -439,7 +612,7 @@ function MarkdownContent({ content }: { content: string }) {
           <hr className="my-6 border-gray-700" />
         ),
         img: ({ src, alt }) => (
-          <img src={src} alt={alt} className="max-w-full h-auto rounded-lg my-4" />
+          <CachedImage src={src} alt={alt} />
         ),
         input: ({ type, checked }) => {
           if (type === "checkbox") {
@@ -458,5 +631,53 @@ function MarkdownContent({ content }: { content: string }) {
     >
       {content}
     </ReactMarkdown>
+  );
+}
+
+// Component that loads cached images with fallback to original URL
+function CachedImage({ src, alt }: { src?: string; alt?: string }) {
+  const [imageSrc, setImageSrc] = useState<string | undefined>(src);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!src) {
+      setIsLoading(false);
+      return;
+    }
+
+    // Try to load from cache
+    getCachedImageAsDataUrl(src)
+      .then((cachedUrl) => {
+        if (cachedUrl) {
+          setImageSrc(cachedUrl);
+        } else {
+          // Fall back to original URL
+          setImageSrc(src);
+        }
+      })
+      .catch(() => {
+        // Fall back to original URL on error
+        setImageSrc(src);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [src]);
+
+  if (isLoading) {
+    return (
+      <div className="bg-gray-700 rounded-lg my-4 h-32 flex items-center justify-center">
+        <div className="text-gray-400 text-sm">Loading image...</div>
+      </div>
+    );
+  }
+
+  return (
+    <img 
+      src={imageSrc} 
+      alt={alt || ""} 
+      className="max-w-full h-auto rounded-lg my-4" 
+      loading="lazy"
+    />
   );
 }

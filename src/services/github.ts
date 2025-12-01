@@ -263,3 +263,60 @@ export async function fetchUpdatedIssuesWithComments(
 
   return offlineIssues;
 }
+
+export async function updateIssueState(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  state: "open" | "closed",
+  token: string
+): Promise<GitHubIssue> {
+  return await githubFetch<GitHubIssue>(
+    `/repos/${owner}/${repo}/issues/${issueNumber}`,
+    { token, method: "PATCH", body: { state } }
+  );
+}
+
+export async function updateIssueLabels(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  labels: string[],
+  token: string
+): Promise<GitHubIssue> {
+  return await githubFetch<GitHubIssue>(
+    `/repos/${owner}/${repo}/issues/${issueNumber}`,
+    { token, method: "PATCH", body: { labels } }
+  );
+}
+
+export async function fetchRepositoryLabels(
+  owner: string,
+  repo: string,
+  token: string
+): Promise<Array<{ name: string; color: string; description?: string }>> {
+  const allLabels: Array<{
+    name: string;
+    color: string;
+    description?: string;
+  }> = [];
+  let page = 1;
+  const perPage = 100;
+
+  while (true) {
+    const labels = await githubFetch<
+      Array<{ name: string; color: string; description?: string }>
+    >(`/repos/${owner}/${repo}/labels?per_page=${perPage}&page=${page}`, {
+      token,
+    });
+
+    allLabels.push(...labels);
+
+    if (labels.length < perPage) {
+      break;
+    }
+    page++;
+  }
+
+  return allLabels;
+}

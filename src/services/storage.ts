@@ -6,6 +6,9 @@ import type {
   OfflineIssue,
   PendingReply,
   LocalIssue,
+  PendingStateChange,
+  PendingLabelUpdate,
+  CachedImage,
 } from "../types";
 
 let appStore: Store | null = null;
@@ -193,4 +196,145 @@ export async function getLocalIssuesForRepo(
 ): Promise<LocalIssue[]> {
   const issues = await getLocalIssues();
   return issues.filter((i) => i.repoId === repoId);
+}
+
+// Pending state changes management
+export async function getPendingStateChanges(): Promise<PendingStateChange[]> {
+  const store = await getAppStore();
+  const changes = await store.get<PendingStateChange[]>(
+    "pending_state_changes"
+  );
+  return changes || [];
+}
+
+export async function addPendingStateChange(
+  change: PendingStateChange
+): Promise<void> {
+  const store = await getAppStore();
+  const changes = await getPendingStateChanges();
+  // Replace any existing pending state change for the same issue
+  const filtered = changes.filter(
+    (c) => !(c.repoId === change.repoId && c.issueNumber === change.issueNumber)
+  );
+  filtered.push(change);
+  await store.set("pending_state_changes", filtered);
+  await store.save();
+}
+
+export async function removePendingStateChange(
+  changeId: string
+): Promise<void> {
+  const store = await getAppStore();
+  const changes = await getPendingStateChanges();
+  const filtered = changes.filter((c) => c.id !== changeId);
+  await store.set("pending_state_changes", filtered);
+  await store.save();
+}
+
+export async function getPendingStateChangesForRepo(
+  repoId: string
+): Promise<PendingStateChange[]> {
+  const changes = await getPendingStateChanges();
+  return changes.filter((c) => c.repoId === repoId);
+}
+
+export async function clearPendingStateChangesForRepo(
+  repoId: string
+): Promise<void> {
+  const store = await getAppStore();
+  const changes = await getPendingStateChanges();
+  const filtered = changes.filter((c) => c.repoId !== repoId);
+  await store.set("pending_state_changes", filtered);
+  await store.save();
+}
+
+// Pending label updates management
+export async function getPendingLabelUpdates(): Promise<PendingLabelUpdate[]> {
+  const store = await getAppStore();
+  const updates = await store.get<PendingLabelUpdate[]>(
+    "pending_label_updates"
+  );
+  return updates || [];
+}
+
+export async function addPendingLabelUpdate(
+  update: PendingLabelUpdate
+): Promise<void> {
+  const store = await getAppStore();
+  const updates = await getPendingLabelUpdates();
+  // Replace any existing pending label update for the same issue
+  const filtered = updates.filter(
+    (u) => !(u.repoId === update.repoId && u.issueNumber === update.issueNumber)
+  );
+  filtered.push(update);
+  await store.set("pending_label_updates", filtered);
+  await store.save();
+}
+
+export async function removePendingLabelUpdate(
+  updateId: string
+): Promise<void> {
+  const store = await getAppStore();
+  const updates = await getPendingLabelUpdates();
+  const filtered = updates.filter((u) => u.id !== updateId);
+  await store.set("pending_label_updates", filtered);
+  await store.save();
+}
+
+export async function getPendingLabelUpdatesForRepo(
+  repoId: string
+): Promise<PendingLabelUpdate[]> {
+  const updates = await getPendingLabelUpdates();
+  return updates.filter((u) => u.repoId === repoId);
+}
+
+export async function clearPendingLabelUpdatesForRepo(
+  repoId: string
+): Promise<void> {
+  const store = await getAppStore();
+  const updates = await getPendingLabelUpdates();
+  const filtered = updates.filter((u) => u.repoId !== repoId);
+  await store.set("pending_label_updates", filtered);
+  await store.save();
+}
+
+// Cached images management
+export async function getCachedImages(): Promise<CachedImage[]> {
+  const store = await getOfflineStore();
+  const images = await store.get<CachedImage[]>("cached_images");
+  return images || [];
+}
+
+export async function addCachedImage(image: CachedImage): Promise<void> {
+  const store = await getOfflineStore();
+  const images = await getCachedImages();
+  // Don't add duplicates
+  const exists = images.find((i) => i.url === image.url);
+  if (!exists) {
+    images.push(image);
+    await store.set("cached_images", images);
+    await store.save();
+  }
+}
+
+export async function getCachedImageByUrl(
+  url: string
+): Promise<CachedImage | null> {
+  const images = await getCachedImages();
+  return images.find((i) => i.url === url) || null;
+}
+
+export async function getCachedImagesForRepo(
+  repoId: string
+): Promise<CachedImage[]> {
+  const images = await getCachedImages();
+  return images.filter((i) => i.repoId === repoId);
+}
+
+export async function clearCachedImagesForRepo(repoId: string): Promise<void> {
+  const store = await getOfflineStore();
+  const images = await getCachedImages();
+  const filtered = images.filter((i) => i.repoId !== repoId);
+  await store.set("cached_images", filtered);
+  await store.save();
 }

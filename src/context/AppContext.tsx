@@ -6,7 +6,7 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import type { Repository, OfflineRepository, GitHubUser, PendingReply, LocalIssue } from "../types";
+import type { Repository, OfflineRepository, GitHubUser, PendingReply, LocalIssue, PendingStateChange, PendingLabelUpdate, GitHubLabel } from "../types";
 import {
   getToken,
   saveToken,
@@ -24,6 +24,14 @@ import {
   addLocalIssue as addLocalIssueToStore,
   removeLocalIssue as removeLocalIssueFromStore,
   getLocalIssuesForRepo,
+  getPendingStateChanges as getPendingStateChangesFromStore,
+  addPendingStateChange as addPendingStateChangeToStore,
+  removePendingStateChange as removePendingStateChangeFromStore,
+  getPendingStateChangesForRepo,
+  getPendingLabelUpdates as getPendingLabelUpdatesFromStore,
+  addPendingLabelUpdate as addPendingLabelUpdateToStore,
+  removePendingLabelUpdate as removePendingLabelUpdateFromStore,
+  getPendingLabelUpdatesForRepo,
 } from "../services/storage";
 import {
   validateToken,
@@ -31,7 +39,11 @@ import {
   fetchUpdatedIssuesWithComments,
   postIssueComment,
   createIssue,
+  updateIssueState,
+  updateIssueLabels,
+  fetchRepositoryLabels,
 } from "../services/github";
+import { extractImageUrls, cacheImage } from "../services/imageCache";
 
 interface AppContextType {
   isLoading: boolean;
@@ -43,6 +55,9 @@ interface AppContextType {
   syncStatus: Map<string, { syncing: boolean; progress?: string }>;
   pendingReplies: PendingReply[];
   localIssues: LocalIssue[];
+  pendingStateChanges: PendingStateChange[];
+  pendingLabelUpdates: PendingLabelUpdate[];
+  repositoryLabels: Map<string, GitHubLabel[]>;
   login: (token: string) => Promise<void>;
   logout: () => Promise<void>;
   addRepository: (owner: string, name: string) => Promise<void>;
@@ -54,6 +69,13 @@ interface AppContextType {
   removePendingReply: (replyId: string) => Promise<void>;
   addLocalIssue: (repoId: string, title: string, body: string, labels: string[]) => Promise<void>;
   removeLocalIssue: (issueId: string) => Promise<void>;
+  addPendingStateChange: (repoId: string, issueNumber: number, state: "open" | "closed") => Promise<void>;
+  removePendingStateChange: (changeId: string) => Promise<void>;
+  addPendingLabelUpdate: (repoId: string, issueNumber: number, labels: string[]) => Promise<void>;
+  removePendingLabelUpdate: (updateId: string) => Promise<void>;
+  getEffectiveIssueState: (repoId: string, issueNumber: number, currentState: "open" | "closed") => "open" | "closed";
+  getEffectiveIssueLabels: (repoId: string, issueNumber: number, currentLabels: GitHubLabel[]) => GitHubLabel[];
+  fetchLabelsForRepo: (repo: Repository) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -72,6 +94,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   >(new Map());
   const [pendingReplies, setPendingReplies] = useState<PendingReply[]>([]);
   const [localIssues, setLocalIssues] = useState<LocalIssue[]>([]);
+  const [pendingStateChanges, setPendingStateChanges] = useState<PendingStateChange[]>([]);
+  const [pendingLabelUpdates, setPendingLabelUpdates] = useState<PendingLabelUpdate[]>([]);
+  const [repositoryLabels, setRepositoryLabels] = useState<Map<string, GitHubLabel[]>>(new Map());
 
   const refreshOfflineData = useCallback(async () => {
     const repos = await getRepositories();
@@ -92,6 +117,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const issues = await getLocalIssuesFromStore();
     setLocalIssues(issues);
+
+    const stateChanges = await getPendingStateChangesFromStore();
+    setPendingStateChanges(stateChanges);
+
+    const labelUpdates = await getPendingLabelUpdatesFromStore();
+    setPendingLabelUpdates(labelUpdates);
   }, []);
 
   // Initialize app state
@@ -102,6 +133,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const savedRepos = await getRepositories();
         const savedReplies = await getPendingRepliesFromStore();
         const savedLocalIssues = await getLocalIssuesFromStore();
+        const savedStateChanges = await getPendingStateChangesFromStore();
+        const savedLabelUpdates = await getPendingLabelUpdatesFromStore();
 
         if (savedToken) {
           try {
@@ -118,6 +151,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setRepositories(savedRepos);
         setPendingReplies(savedReplies);
         setLocalIssues(savedLocalIssues);
+        setPendingStateChanges(savedStateChanges);
+        setPendingLabelUpdates(savedLabelUpdates);
         await refreshOfflineData();
       } catch (error) {
         console.error("Failed to initialize app:", error);
@@ -181,7 +216,83 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const publishPendingItems = async (repo: Repository) => {
     if (!token) return;
 
-    // Publish local issues first
+    // Publish pending state changes first
+    const repoStateChanges = await getPendingStateChangesForRepo(repo.id);
+
+    if (repoStateChanges.length > 0) {
+      setSyncStatus((prev) => {
+        const newStatus = new Map(prev);
+        newStatus.set(repo.id, {
+          syncing: true,
+          progress: `Updating ${repoStateChanges.length} issue states...`,
+        });
+        return newStatus;
+      });
+
+      for (let i = 0; i < repoStateChanges.length; i++) {
+        const change = repoStateChanges[i];
+        setSyncStatus((prev) => {
+          const newStatus = new Map(prev);
+          newStatus.set(repo.id, {
+            syncing: true,
+            progress: `Updating state ${i + 1}/${repoStateChanges.length}...`,
+          });
+          return newStatus;
+        });
+
+        await updateIssueState(
+          repo.owner,
+          repo.name,
+          change.issueNumber,
+          change.state,
+          token
+        );
+
+        await removePendingStateChangeFromStore(change.id);
+      }
+
+      setPendingStateChanges((prev) => prev.filter((c) => c.repoId !== repo.id));
+    }
+
+    // Publish pending label updates
+    const repoLabelUpdates = await getPendingLabelUpdatesForRepo(repo.id);
+
+    if (repoLabelUpdates.length > 0) {
+      setSyncStatus((prev) => {
+        const newStatus = new Map(prev);
+        newStatus.set(repo.id, {
+          syncing: true,
+          progress: `Updating ${repoLabelUpdates.length} issue labels...`,
+        });
+        return newStatus;
+      });
+
+      for (let i = 0; i < repoLabelUpdates.length; i++) {
+        const update = repoLabelUpdates[i];
+        setSyncStatus((prev) => {
+          const newStatus = new Map(prev);
+          newStatus.set(repo.id, {
+            syncing: true,
+            progress: `Updating labels ${i + 1}/${repoLabelUpdates.length}...`,
+          });
+          return newStatus;
+        });
+
+        await updateIssueLabels(
+          repo.owner,
+          repo.name,
+          update.issueNumber,
+          update.labels,
+          token
+        );
+
+        await removePendingLabelUpdateFromStore(update.id);
+      }
+
+      setPendingLabelUpdates((prev) => prev.filter((u) => u.repoId !== repo.id));
+    }
+
+    // Publish local issues
     const repoLocalIssues = await getLocalIssuesForRepo(repo.id);
 
     if (repoLocalIssues.length > 0) {
@@ -276,6 +387,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // First, publish any pending local issues and replies
       await publishPendingItems(repo);
 
+      // Fetch repository labels
+      setSyncStatus((prev) => {
+        const newStatus = new Map(prev);
+        newStatus.set(repo.id, {
+          syncing: true,
+          progress: "Fetching repository labels...",
+        });
+        return newStatus;
+      });
+
+      const labels = await fetchRepositoryLabels(repo.owner, repo.name, token);
+      setRepositoryLabels((prev) => {
+        const newLabels = new Map(prev);
+        newLabels.set(repo.id, labels.map(l => ({ id: 0, ...l })));
+        return newLabels;
+      });
+
       // Then fetch the latest issues and comments
       const issues = await fetchAllIssuesWithComments(
         repo.owner,
@@ -292,6 +420,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
         }
       );
+
+      // Cache images from issues and comments
+      setSyncStatus((prev) => {
+        const newStatus = new Map(prev);
+        newStatus.set(repo.id, {
+          syncing: true,
+          progress: "Caching images for offline use...",
+        });
+        return newStatus;
+      });
+
+      await cacheIssueImages(issues, repo.id);
 
       const offlineRepo: OfflineRepository = {
         ...repo,
@@ -315,6 +455,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
         newStatus.set(repo.id, { syncing: false });
         return newStatus;
       });
+    }
+  };
+
+  // Helper function to cache images from issues
+  const cacheIssueImages = async (issues: OfflineRepository["issues"], repoId: string) => {
+    const allUrls: string[] = [];
+
+    for (const issue of issues) {
+      if (issue.body) {
+        allUrls.push(...extractImageUrls(issue.body));
+      }
+      if (issue.comments_data) {
+        for (const comment of issue.comments_data) {
+          allUrls.push(...extractImageUrls(comment.body));
+        }
+      }
+    }
+
+    const uniqueUrls = [...new Set(allUrls)];
+
+    for (let i = 0; i < uniqueUrls.length; i++) {
+      try {
+        await cacheImage(uniqueUrls[i], repoId);
+      } catch (error) {
+        console.warn(`Failed to cache image: ${uniqueUrls[i]}`, error);
+      }
     }
   };
 
@@ -353,6 +519,93 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const removeLocalIssue = async (issueId: string) => {
     await removeLocalIssueFromStore(issueId);
     setLocalIssues((prev) => prev.filter((i) => i.id !== issueId));
+  };
+
+  const addPendingStateChange = async (repoId: string, issueNumber: number, state: "open" | "closed") => {
+    const change: PendingStateChange = {
+      id: `${repoId}-${issueNumber}-state-${Date.now()}`,
+      repoId,
+      issueNumber,
+      state,
+      created_at: new Date().toISOString(),
+    };
+
+    await addPendingStateChangeToStore(change);
+    setPendingStateChanges((prev) => {
+      // Remove any existing pending state change for the same issue
+      const filtered = prev.filter(
+        (c) => !(c.repoId === repoId && c.issueNumber === issueNumber)
+      );
+      return [...filtered, change];
+    });
+  };
+
+  const removePendingStateChange = async (changeId: string) => {
+    await removePendingStateChangeFromStore(changeId);
+    setPendingStateChanges((prev) => prev.filter((c) => c.id !== changeId));
+  };
+
+  const addPendingLabelUpdate = async (repoId: string, issueNumber: number, labels: string[]) => {
+    const update: PendingLabelUpdate = {
+      id: `${repoId}-${issueNumber}-labels-${Date.now()}`,
+      repoId,
+      issueNumber,
+      labels,
+      created_at: new Date().toISOString(),
+    };
+
+    await addPendingLabelUpdateToStore(update);
+    setPendingLabelUpdates((prev) => {
+      // Remove any existing pending label update for the same issue
+      const filtered = prev.filter(
+        (u) => !(u.repoId === repoId && u.issueNumber === issueNumber)
+      );
+      return [...filtered, update];
+    });
+  };
+
+  const removePendingLabelUpdate = async (updateId: string) => {
+    await removePendingLabelUpdateFromStore(updateId);
+    setPendingLabelUpdates((prev) => prev.filter((u) => u.id !== updateId));
+  };
+
+  // Get the effective state of an issue (considering pending changes)
+  const getEffectiveIssueState = (repoId: string, issueNumber: number, currentState: "open" | "closed"): "open" | "closed" => {
+    const pendingChange = pendingStateChanges.find(
+      (c) => c.repoId === repoId && c.issueNumber === issueNumber
+    );
+    return pendingChange ? pendingChange.state : currentState;
+  };
+
+  // Get the effective labels of an issue (considering pending changes)
+  const getEffectiveIssueLabels = (repoId: string, issueNumber: number, currentLabels: GitHubLabel[]): GitHubLabel[] => {
+    const pendingUpdate = pendingLabelUpdates.find(
+      (u) => u.repoId === repoId && u.issueNumber === issueNumber
+    );
+    if (pendingUpdate) {
+      // Convert label names to GitHubLabel objects
+      const repoLabels = repositoryLabels.get(repoId) || [];
+      return pendingUpdate.labels.map(name => {
+        const existing = repoLabels.find(l => l.name === name);
+        return existing || { id: 0, name, color: "6b7280" };
+      });
+    }
+    return currentLabels;
+  };
+
+  const fetchLabelsForRepo = async (repo: Repository) => {
+    if (!token) return;
+
+    try {
+      const labels = await fetchRepositoryLabels(repo.owner, repo.name, token);
+      setRepositoryLabels((prev) => {
+        const newLabels = new Map(prev);
+        newLabels.set(repo.id, labels.map(l => ({ id: 0, ...l })));
+        return newLabels;
+      });
+    } catch (error) {
+      console.error("Failed to fetch labels:", error);
+    }
   };
 
   const incrementalSyncRepository = async (repo: Repository) => {
@@ -450,6 +703,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         syncStatus,
         pendingReplies,
         localIssues,
+        pendingStateChanges,
+        pendingLabelUpdates,
+        repositoryLabels,
         login,
         logout,
         addRepository,
@@ -461,6 +717,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         removePendingReply,
         addLocalIssue,
         removeLocalIssue,
+        addPendingStateChange,
+        removePendingStateChange,
+        addPendingLabelUpdate,
+        removePendingLabelUpdate,
+        getEffectiveIssueState,
+        getEffectiveIssueLabels,
+        fetchLabelsForRepo,
       }}
     >
       {children}

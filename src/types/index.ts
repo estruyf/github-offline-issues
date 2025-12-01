@@ -91,3 +91,26 @@ export interface LocalIssue {
   labels: string[];
   created_at: string;
 }
+
+export interface PendingStateChange {
+  id: string;
+  repoId: string;
+  issueNumber: number;
+  state: "open" | "closed";
+  created_at: string;
+}
+
+export interface PendingLabelUpdate {
+  id: string;
+  repoId: string;
+  issueNumber: number;
+  labels: string[];
+  created_at: string;
+}
+
+export interface CachedImage {
+  url: string;
+  localPath: string;
+  repoId: string;
+  cached_at: string;
+}

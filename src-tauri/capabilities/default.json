@@ -10,7 +10,23 @@
     "http:default",
     {
       "identifier": "http:default",
-      "allow": [{ "url": "https://api.github.com/**" }]
+      "allow": [
+        { "url": "https://api.github.com/**" },
+        { "url": "https://user-images.githubusercontent.com/**" },
+        { "url": "https://github.githubassets.com/**" },
+        { "url": "https://avatars.githubusercontent.com/**" },
+        { "url": "https://raw.githubusercontent.com/**" },
+        { "url": "https://camo.githubusercontent.com/**" }
+      ]
+    },
+    "fs:default",
+    {
+      "identifier": "fs:allow-appdata-read-recursive",
+      "allow": [{ "path": "$APPDATA/**" }]
+    },
+    {
+      "identifier": "fs:allow-appdata-write-recursive",
+      "allow": [{ "path": "$APPDATA/**" }]
     }
   ]
 }

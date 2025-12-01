@@ -1,8 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useApp } from "../context/AppContext";
 import type { OfflineIssue, LocalIssue } from "../types";
-import { ArrowLeft, RefreshCw, Loader, MessageSquare, Plus, Download, X, Clock, Trash2 } from "lucide-react";
+import { ArrowLeft, RefreshCw, Loader, MessageSquare, Plus, Download, X, Clock, Trash2, Filter, ChevronDown, ArrowUpDown } from "lucide-react";
+
+type SortOption = "updated" | "created" | "comments" | "title";
+type SortDirection = "asc" | "desc";
 
 export function IssuesList() {
   const { repoId } = useParams<{ repoId: string }>();
@@ -17,6 +20,9 @@ export function IssuesList() {
     localIssues,
     addLocalIssue,
     removeLocalIssue,
+    repositoryLabels,
+    fetchLabelsForRepo,
+    getEffectiveIssueState,
   } = useApp();
 
   const [filter, setFilter] = useState<"all" | "open" | "closed">("open");
@@ -26,11 +32,53 @@ export function IssuesList() {
   const [newIssueBody, setNewIssueBody] = useState("");
   const [newIssueLabels, setNewIssueLabels] = useState("");
 
+  // Advanced filtering
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
+  const [selectedAssignee, setSelectedAssignee] = useState<string>("");
+  const [selectedMilestone, setSelectedMilestone] = useState<string>("");
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Sorting
+  const [sortBy, setSortBy] = useState<SortOption>("updated");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+
   const decodedRepoId = repoId ? decodeURIComponent(repoId) : "";
   const repo = repositories.find((r) => r.id === decodedRepoId);
   const offline = offlineData.get(decodedRepoId);
   const status = syncStatus.get(decodedRepoId);
   const isSyncing = status?.syncing;
+
+  // Get available labels for this repository
+  const availableLabels = repositoryLabels.get(decodedRepoId) || [];
+
+  // Fetch labels when component mounts
+  useEffect(() => {
+    if (repo && availableLabels.length === 0) {
+      fetchLabelsForRepo(repo);
+    }
+  }, [repo, availableLabels.length, fetchLabelsForRepo]);
+
+  // Extract unique assignees and milestones from issues
+  const { uniqueAssignees, uniqueMilestones } = useMemo(() => {
+    if (!offline?.issues) return { uniqueAssignees: [], uniqueMilestones: [] };
+
+    const assignees = new Set<string>();
+    const milestones = new Map<string, string>();
+
+    for (const issue of offline.issues) {
+      for (const assignee of issue.assignees) {
+        assignees.add(assignee.login);
+      }
+      if (issue.milestone) {
+        milestones.set(issue.milestone.title, issue.milestone.title);
+      }
+    }
+
+    return {
+      uniqueAssignees: Array.from(assignees).sort(),
+      uniqueMilestones: Array.from(milestones.values()).sort(),
+    };
+  }, [offline?.issues]);
 
   // Count pending replies for this repository
   const repoPendingRepliesCount = pendingReplies.filter((r) => r.repoId === decodedRepoId).length;
@@ -46,9 +94,12 @@ export function IssuesList() {
 
     let issues = [...offline.issues];
 
-    // Filter by state
+    // Filter by state (considering pending state changes)
     if (filter !== "all") {
-      issues = issues.filter((issue) => issue.state === filter);
+      issues = issues.filter((issue) => {
+        const effectiveState = getEffectiveIssueState(decodedRepoId, issue.number, issue.state);
+        return effectiveState === filter;
+      });
     }
 
     // Filter by search
@@ -62,14 +113,53 @@ export function IssuesList() {
       );
     }
 
-    // Sort by updated_at (newest first)
-    issues.sort(
-      (a, b) =>
-        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-    );
+    // Filter by labels
+    if (selectedLabels.length > 0) {
+      issues = issues.filter((issue) =>
+        selectedLabels.every((labelName) =>
+          issue.labels.some((l) => l.name === labelName)
+        )
+      );
+    }
+
+    // Filter by assignee
+    if (selectedAssignee) {
+      issues = issues.filter((issue) =>
+        issue.assignees.some((a) => a.login === selectedAssignee)
+      );
+    }
+
+    // Filter by milestone
+    if (selectedMilestone) {
+      issues = issues.filter(
+        (issue) => issue.milestone?.title === selectedMilestone
+      );
+    }
+
+    // Sort issues
+    issues.sort((a, b) => {
+      let comparison = 0;
+
+      switch (sortBy) {
+        case "updated":
+          comparison = new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime();
+          break;
+        case "created":
+          comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          break;
+        case "comments":
+          comparison = a.comments - b.comments;
+          break;
+        case "title":
+          comparison = a.title.localeCompare(b.title);
+          break;
+      }
+
+      return sortDirection === "desc" ? -comparison : comparison;
+    });
 
     return issues;
-  }, [offline?.issues, filter, search]);
+  }, [offline?.issues, filter, search, selectedLabels, selectedAssignee, selectedMilestone, sortBy, sortDirection, decodedRepoId, getEffectiveIssueState]);
 
   const handleSync = async () => {
     if (!repo) return;
@@ -221,7 +311,164 @@ export function IssuesList() {
                 </button>
               ))}
             </div>
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${showFilters || selectedLabels.length > 0 || selectedAssignee || selectedMilestone
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                }`}
+            >
+              <Filter className="w-4 h-4" />
+              Filters
+              {(selectedLabels.length > 0 || selectedAssignee || selectedMilestone) && (
+                <span className="bg-blue-500 text-xs px-1.5 py-0.5 rounded-full">
+                  {selectedLabels.length + (selectedAssignee ? 1 : 0) + (selectedMilestone ? 1 : 0)}
+                </span>
+              )}
+            </button>
           </div>
+
+          {/* Advanced Filters Panel */}
+          {showFilters && (
+            <div className="mt-4 p-4 bg-gray-700/50 rounded-lg border border-gray-600">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {/* Labels Filter */}
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Labels</label>
+                  <div className="relative">
+                    <select
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value && !selectedLabels.includes(value)) {
+                          setSelectedLabels([...selectedLabels, value]);
+                        }
+                        e.target.value = "";
+                      }}
+                      defaultValue=""
+                    >
+                      <option value="">Add label...</option>
+                      {availableLabels
+                        .filter((l) => !selectedLabels.includes(l.name))
+                        .map((label) => (
+                          <option key={label.name} value={label.name}>
+                            {label.name}
+                          </option>
+                        ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  </div>
+                  {selectedLabels.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {selectedLabels.map((labelName) => {
+                        const label = availableLabels.find((l) => l.name === labelName);
+                        return (
+                          <span
+                            key={labelName}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full"
+                            style={{
+                              backgroundColor: label ? `#${label.color}20` : "#6b728020",
+                              color: label ? `#${label.color}` : "#9ca3af",
+                              border: `1px solid ${label ? `#${label.color}50` : "#6b728050"}`,
+                            }}
+                          >
+                            {labelName}
+                            <button
+                              onClick={() => setSelectedLabels(selectedLabels.filter((l) => l !== labelName))}
+                              className="hover:opacity-70"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Assignee Filter */}
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Assignee</label>
+                  <div className="relative">
+                    <select
+                      value={selectedAssignee}
+                      onChange={(e) => setSelectedAssignee(e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Any assignee</option>
+                      {uniqueAssignees.map((assignee) => (
+                        <option key={assignee} value={assignee}>
+                          {assignee}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* Milestone Filter */}
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Milestone</label>
+                  <div className="relative">
+                    <select
+                      value={selectedMilestone}
+                      onChange={(e) => setSelectedMilestone(e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Any milestone</option>
+                      {uniqueMilestones.map((milestone) => (
+                        <option key={milestone} value={milestone}>
+                          {milestone}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* Sort Options */}
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Sort by</label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <select
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value as SortOption)}
+                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="updated">Updated</option>
+                        <option value="created">Created</option>
+                        <option value="comments">Comments</option>
+                        <option value="title">Title</option>
+                      </select>
+                      <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    </div>
+                    <button
+                      onClick={() => setSortDirection(sortDirection === "asc" ? "desc" : "asc")}
+                      className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white hover:bg-gray-600 transition-colors"
+                      title={sortDirection === "asc" ? "Ascending" : "Descending"}
+                    >
+                      <ArrowUpDown className={`w-4 h-4 ${sortDirection === "asc" ? "rotate-180" : ""}`} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Clear Filters */}
+              {(selectedLabels.length > 0 || selectedAssignee || selectedMilestone) && (
+                <button
+                  onClick={() => {
+                    setSelectedLabels([]);
+                    setSelectedAssignee("");
+                    setSelectedMilestone("");
+                  }}
+                  className="mt-4 text-sm text-gray-400 hover:text-white"
+                >
+                  Clear all filters
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </header>
 
