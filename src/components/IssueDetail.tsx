@@ -231,8 +231,8 @@ export function IssueDetail() {
             <button
               onClick={handleToggleState}
               className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-sm font-medium transition-colors ${effectiveState === "open"
-                  ? "bg-purple-900/50 text-purple-400 hover:bg-purple-900/70 border border-purple-700"
-                  : "bg-green-900/50 text-green-400 hover:bg-green-900/70 border border-green-700"
+                ? "bg-purple-900/50 text-purple-400 hover:bg-purple-900/70 border border-purple-700"
+                : "bg-green-900/50 text-green-400 hover:bg-green-900/70 border border-green-700"
                 }`}
             >
               {effectiveState === "open" ? (
@@ -306,8 +306,8 @@ export function IssueDetail() {
                         key={label.name}
                         onClick={() => toggleLabel(label.name)}
                         className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${selectedLabels.includes(label.name)
-                            ? "bg-gray-700"
-                            : "hover:bg-gray-700/50"
+                          ? "bg-gray-700"
+                          : "hover:bg-gray-700/50"
                           }`}
                       >
                         <div
@@ -673,10 +673,10 @@ function CachedImage({ src, alt }: { src?: string; alt?: string }) {
   }
 
   return (
-    <img 
-      src={imageSrc} 
-      alt={alt || ""} 
-      className="max-w-full h-auto rounded-lg my-4" 
+    <img
+      src={imageSrc}
+      alt={alt || ""}
+      className="max-w-full h-auto rounded-lg my-4"
       loading="lazy"
     />
   );
